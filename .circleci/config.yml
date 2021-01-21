@@ -9,11 +9,10 @@ jobs:
       - restore_cache:
           keys:
             - go-mod-v4-{{ checksum "go.sum" }}
-      - run:
-          name: Run unit tests
-          command: |
-            PACKAGE_NAMES=$(go list ./... | circleci tests split --split-by=timings --timings-type=classname)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES
+      - run: go mod download
+      - run: go mod verify
+      - run: go test -race -coverprofile=coverage.txt -covermode=atomic -v ./...
+      - run: bash <(curl -s https://codecov.io/bash)
       - save_cache:
           key: go-mod-v4-{{ checksum "go.sum" }}
           paths:
@@ -22,4 +21,6 @@ workflows:
   version: 2
   pipeline:
     jobs:
-      - build
+      - build:
+          context:
+            - codecov
