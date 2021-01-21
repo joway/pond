@@ -5,38 +5,61 @@ Generic Object Pool for Golang.
 ## Get Started
 
 ```go
+type conn struct {
+addr string
+}
+
 ctx := context.Background()
 cfg := pond.NewDefaultConfig()
-cfg.MinIdle = 1
-cfg.ObjectCreateFactory = func(ctx context.Context) (interface{}, error) {
-	return &conn{addr: "127.0.0.1"}, nil
+//required
+cfg.ObjectCreateFactory = func (ctx context.Context) (interface{}, error) {
+return &conn{addr: "127.0.0.1"}, nil
 }
-cfg.ObjectValidateFactory = func(ctx context.Context, object interface{}) bool {
-	c := object.(*conn)
-	return c.addr != ""
+//optional
+cfg.ObjectValidateFactory = func (ctx context.Context, object interface{}) bool {
+c := object.(*conn)
+return c.addr != ""
 }
-cfg.ObjectDestroyFactory = func(ctx context.Context, object interface{}) error {
-	c := object.(*conn)
-	c.addr = ""
-	return nil
+//optional
+cfg.ObjectDestroyFactory = func (ctx context.Context, object interface{}) error {
+c := object.(*conn)
+c.addr = ""
+return nil
 }
 
 p, err := pond.New(cfg)
 if err != nil {
-	log.Fatal(err)
+log.Fatal(err)
 }
 
 obj, err := p.BorrowObject(ctx)
 if err != nil {
-	log.Fatal(err)
+log.Fatal(err)
 }
 defer p.ReturnObject(ctx, obj)
 fmt.Printf("get conn: %v\n", obj.(*conn).addr)
 ```
 
+## Configuration
+
+| Option                        | Default        | Description  |
+| ------------------------------|:--------------:| :------------|
+| MaxSize                       | 10             |The capacity of the pool. If MaxSize <= 0, no capacity limit.|
+| MinIdle                       | 0              |The minimum size of the idle objects.|
+| MaxIdle                       | 10             |The maximal size of the idle objects. Idle objects exceeding MaxIdle will be evicted.|
+| MinIdleTime                   | 5m             |The minimum time that idle object should be reserved.|
+| AutoEvict                     | true           |Enable auto evict idle objects. When true, pool will create a goroutine to start a evictor.|
+| EvictInterval                 | 30s            |The interval between evict.|
+| MaxValidateAttempts           | 1              |The maximal attempts to validate object.|
+| ObjectCreateFactory           | **required**   |The factory of creating object.|
+| ObjectValidateFactory         | none           |The factory of validating object.|
+| ObjectDestroyFactory          | none           |The factory of destroying object.|
+
 ## Benchmark
 
-Bench with [go-commons-pool](https://github.com/jolestar/go-commons-pool):
+Compare with:
+
+- [go-commons-pool](https://github.com/jolestar/go-commons-pool):
 
 ```text
 BenchmarkPool-8                          3116902               358 ns/op              71 B/op          2 allocs/op
