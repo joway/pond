@@ -1,5 +1,10 @@
 # Pond
 
+![GitHub release](https://img.shields.io/github/tag/joway/pond.svg?label=release)
+[![Go Report Card](https://goreportcard.com/badge/github.com/joway/pond)](https://goreportcard.com/report/github.com/joway/pond)
+[![codecov](https://codecov.io/gh/joway/pond/branch/master/graph/badge.svg?token=Y1YO11FZKU)](https://codecov.io/gh/joway/pond)
+[![CircleCI](https://circleci.com/gh/joway/pond.svg?style=shield)](https://circleci.com/gh/joway/pond)
+
 Generic Object Pool for Golang.
 
 ## Get Started
