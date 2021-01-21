@@ -6,35 +6,35 @@ Generic Object Pool for Golang.
 
 ```go
 type conn struct {
-addr string
+    addr string
 }
 
 ctx := context.Background()
 cfg := pond.NewDefaultConfig()
 //required
 cfg.ObjectCreateFactory = func (ctx context.Context) (interface{}, error) {
-return &conn{addr: "127.0.0.1"}, nil
+    return &conn{addr: "127.0.0.1"}, nil
 }
 //optional
 cfg.ObjectValidateFactory = func (ctx context.Context, object interface{}) bool {
-c := object.(*conn)
-return c.addr != ""
+    c := object.(*conn)
+    return c.addr != ""
 }
 //optional
 cfg.ObjectDestroyFactory = func (ctx context.Context, object interface{}) error {
-c := object.(*conn)
-c.addr = ""
-return nil
+    c := object.(*conn)
+    c.addr = ""
+    return nil
 }
 
 p, err := pond.New(cfg)
 if err != nil {
-log.Fatal(err)
+    log.Fatal(err)
 }
 
 obj, err := p.BorrowObject(ctx)
 if err != nil {
-log.Fatal(err)
+    log.Fatal(err)
 }
 defer p.ReturnObject(ctx, obj)
 fmt.Printf("get conn: %v\n", obj.(*conn).addr)
