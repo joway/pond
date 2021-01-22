@@ -10,6 +10,7 @@ import (
 var (
 	ErrPoolClosed                  = errors.New("pool has been closed")
 	ErrPoolFulled                  = errors.New("pool is full")
+	ErrPoolExhausted               = errors.New("pool is exhausted")
 	ErrObjectNotFound              = errors.New("object not found")
 	ErrObjectValidateFailed        = errors.New("object validate failed")
 	ErrObjectCreateFactoryNotFound = errors.New("the factory of object creating not found")
@@ -123,10 +124,18 @@ func (p *Pool) borrowObject(ctx context.Context) (interface{}, error) {
 	if p.isClosed() {
 		return nil, ErrPoolClosed
 	}
-	//if there is no idle objects and is not full
-	if p.manager.IdleSize() <= 0 && !p.isFull() {
-		if err := p.createObject(ctx); err != nil {
-			return nil, err
+	//if there is no idle objects
+	if p.manager.IdleSize() <= 0 {
+		if p.isFull() {
+			//if pool is exhausted, and NonBlocking enabled
+			if p.config.Nonblocking {
+				return nil, ErrPoolExhausted
+			}
+		} else {
+			//if pool is not full, just create a new object
+			if err := p.createObject(ctx); err != nil {
+				return nil, err
+			}
 		}
 	}
 

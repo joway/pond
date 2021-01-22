@@ -256,3 +256,28 @@ func TestPoolValidateRetry(t *testing.T) {
 	assert.NotNil(t, obj)
 	assert.NoError(t, err)
 }
+
+func TestPoolNonblocking(t *testing.T) {
+	ctx := context.Background()
+	cfg := NewConfig(testObjectCreateFactory)
+	cfg.MaxSize = 10
+	cfg.Nonblocking = true
+	p, _ := New(cfg)
+	defer p.Close(ctx)
+
+	objs := make([]interface{}, 0)
+	for i := 0; i < cfg.MaxSize; i++ {
+		obj, err := p.BorrowObject(ctx)
+		assert.NoError(t, err)
+		objs = append(objs, obj)
+	}
+	_, err := p.BorrowObject(ctx)
+	assert.Equal(t, ErrPoolExhausted, err)
+
+	//return one and borrow two
+	p.ReturnObject(ctx, objs[0])
+	_, err = p.BorrowObject(ctx)
+	assert.NoError(t, err)
+	_, err = p.BorrowObject(ctx)
+	assert.Equal(t, ErrPoolExhausted, err)
+}

@@ -14,6 +14,7 @@ const (
 	DefaultMinIdle             = 0
 	DefaultMaxIdle             = 10
 	DefaultMinIdleTime         = time.Minute * 5
+	DefaultNonblocking         = false
 	DefaultAutoEvict           = true
 	DefaultEvictInterval       = time.Second * 30
 	DefaultMaxValidateAttempts = 1
@@ -45,6 +46,10 @@ type Config struct {
 	The minimum time that idle object should be reserved.
 	*/
 	MinIdleTime time.Duration
+	/**
+	The blocking policy. If true, it will return ErrPoolExhausted when pool is exhausted.
+	*/
+	Nonblocking bool
 	/**
 	Enable auto evict idle objects. When true, pool will create a goroutine to start a evictor.
 	*/
@@ -83,6 +88,7 @@ func NewDefaultConfig() Config {
 		MinIdle:             DefaultMinIdle,
 		MaxIdle:             DefaultMaxIdle,
 		MinIdleTime:         DefaultMinIdleTime,
+		Nonblocking:         DefaultNonblocking,
 		AutoEvict:           DefaultAutoEvict,
 		EvictInterval:       DefaultEvictInterval,
 		MaxValidateAttempts: DefaultMaxValidateAttempts,

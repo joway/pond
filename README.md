@@ -53,6 +53,7 @@ fmt.Printf("get conn: %v\n", obj.(*conn).addr)
 | MinIdle                       | 0              |The minimum size of the idle objects.|
 | MaxIdle                       | 10             |The maximal size of the idle objects. Idle objects exceeding MaxIdle will be evicted.|
 | MinIdleTime                   | 5m             |The minimum time that idle object should be reserved.|
+| Nonblocking                   | false          |The blocking policy. If true, it will return ErrPoolExhausted when pool is exhausted.|
 | AutoEvict                     | true           |Enable auto evict idle objects. When true, pool will create a goroutine to start a evictor.|
 | EvictInterval                 | 30s            |The interval between evict.|
 | MaxValidateAttempts           | 1              |The maximal attempts to validate object.|
