@@ -7,6 +7,10 @@
 
 Generic Object Pool for Golang.
 
+## Adopters
+
+- [Hive](https://github.com/joway/hive): A high-efficiency Goroutine Pool.
+
 ## Get Started
 
 ```go
