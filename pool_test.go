@@ -2,6 +2,7 @@ package pond
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"sync"
 	"testing"
@@ -13,6 +14,8 @@ import (
 var loopSize = 500
 
 type contextKeyName struct{}
+type contextKeyCreateErr struct{}
+type contextKeyValidateErr struct{}
 
 type testObject struct {
 	name string
@@ -25,10 +28,19 @@ func (o testObject) Close() error {
 var testObjectCreateFactory ObjectCreateFactory = func(ctx context.Context) (interface{}, error) {
 	var name string
 	cval := ctx.Value(contextKeyName{})
+	cerr := ctx.Value(contextKeyCreateErr{})
+	if cerr != nil {
+		return nil, cerr.(error)
+	}
 	if cval != nil {
 		name = cval.(string)
 	}
 	return &testObject{name: name}, nil
+}
+
+var testObjectValidateFactory ObjectValidateFactory = func(ctx context.Context, object interface{}) bool {
+	cerr := ctx.Value(contextKeyValidateErr{})
+	return cerr == nil
 }
 
 func TestBasicPool(t *testing.T) {
@@ -74,7 +86,7 @@ func TestPoolAutoEvict(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, p.IdleSize())
 	//evict one
-	time.Sleep(cfg.EvictInterval * 2)
+	time.Sleep(cfg.EvictInterval * 10)
 	assert.Equal(t, cfg.MaxIdle, p.IdleSize())
 	assert.Equal(t, loopSize-1, p.manager.Size())
 
@@ -280,4 +292,129 @@ func TestPoolNonblocking(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = p.BorrowObject(ctx)
 	assert.Equal(t, ErrPoolExhausted, err)
+}
+
+func TestPoolReturnAfterClosed(t *testing.T) {
+	ctx := context.Background()
+	cfg := NewConfig(testObjectCreateFactory)
+	destroyed := 0
+	cfg.ObjectDestroyFactory = func(ctx context.Context, object interface{}) error {
+		destroyed++
+		return nil
+	}
+	p, _ := New(cfg)
+	obj, err := p.BorrowObject(ctx)
+	assert.NoError(t, err)
+	assert.NoError(t, err)
+	err = p.Close(ctx)
+	assert.NoError(t, err)
+
+	err = p.ReturnObject(ctx, obj)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, destroyed)
+	assert.Equal(t, 0, p.IdleSize())
+}
+
+func TestPoolInvalidateAfterClosed(t *testing.T) {
+	ctx := context.Background()
+	cfg := NewConfig(testObjectCreateFactory)
+	destroyed := 0
+	cfg.ObjectDestroyFactory = func(ctx context.Context, object interface{}) error {
+		destroyed++
+		return nil
+	}
+	p, _ := New(cfg)
+	obj, err := p.BorrowObject(ctx)
+	assert.NoError(t, err)
+	assert.NoError(t, err)
+	err = p.Close(ctx)
+	assert.NoError(t, err)
+
+	err = p.InvalidateObject(ctx, obj)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, destroyed)
+	assert.Equal(t, 0, p.IdleSize())
+}
+
+func TestPoolBorrowAfterClosed(t *testing.T) {
+	ctx := context.Background()
+	cfg := NewConfig(testObjectCreateFactory)
+	cfg.ObjectValidateFactory = testObjectValidateFactory
+	p, _ := New(cfg)
+
+	//make pool full of size
+	objs := make([]*testObject, 0)
+	for i := 0; i < p.config.MaxSize; i++ {
+		obj, err := p.BorrowObject(ctx)
+		if err != nil {
+		} else {
+			testObj := obj.(*testObject)
+			objs = append(objs, testObj)
+		}
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		//block at first, active after closed
+		for i := 0; i < p.config.MaxSize; i++ {
+			_, err := p.BorrowObject(ctx)
+			assert.Equal(t, ErrPoolClosed, err)
+		}
+	}()
+	time.Sleep(time.Millisecond * 100)
+	err := p.Close(ctx)
+	assert.NoError(t, err)
+
+	for _, obj := range objs {
+		err := p.ReturnObject(ctx, obj)
+		assert.NoError(t, err)
+	}
+	wg.Wait()
+}
+
+func TestPoolBorrowWhenCreateOrValidateFailed(t *testing.T) {
+	cfg := NewConfig(testObjectCreateFactory)
+	cfg.ObjectValidateFactory = testObjectValidateFactory
+	cfg.MaxSize = 1000
+	p, _ := New(cfg)
+
+	objs := make([]*testObject, 0)
+	for i := 0; i < p.config.MaxSize; i++ {
+		cerr := errors.New("create error")
+		ctx := context.Background()
+		if i%4 == 1 {
+			ctx = context.WithValue(context.Background(), contextKeyCreateErr{}, cerr)
+		} else if i%4 == 2 {
+			ctx = context.WithValue(context.Background(), contextKeyValidateErr{}, "failed")
+		} else if i%4 == 3 {
+			ctx = context.WithValue(context.Background(), contextKeyCreateErr{}, cerr)
+			ctx = context.WithValue(context.Background(), contextKeyValidateErr{}, "failed")
+		}
+		obj, err := p.BorrowObject(ctx)
+		if i%4 == 1 {
+			assert.Equal(t, cerr, err)
+		} else if i%4 == 2 || i%4 == 3 {
+			assert.Equal(t, ErrObjectValidateFailed, err)
+		} else {
+			assert.NoError(t, err)
+			testObj := obj.(*testObject)
+			objs = append(objs, testObj)
+		}
+	}
+	assert.Equal(t, p.config.MaxSize/4, len(objs))
+}
+
+func TestPoolBorrowWhenAlwaysCreateFailed(t *testing.T) {
+	ctx := context.Background()
+	cfg := NewConfig(testObjectCreateFactory)
+	p, _ := New(cfg)
+
+	for i := 0; i < p.config.MaxSize*10; i++ {
+		cerr := errors.New("create error")
+		obj, err := p.BorrowObject(context.WithValue(ctx, contextKeyCreateErr{}, cerr))
+		assert.Equal(t, cerr, err)
+		assert.Nil(t, obj)
+	}
 }

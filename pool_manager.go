@@ -52,7 +52,7 @@ func (p *poolManager) Create(object interface{}) {
 func (p *poolManager) Return(object interface{}) {
 	po := p.active[object]
 	if po == nil {
-		//returned object not existed
+		//return a object that not existed
 		return
 	}
 	delete(p.active, object)

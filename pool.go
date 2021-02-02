@@ -21,7 +21,7 @@ type Pool struct {
 	manager    *poolManager
 	config     Config
 	actionLock sync.RWMutex //lock for borrow/return/evict/... actions
-	returnedCh chan struct{}
+	wakeupCh   chan struct{}
 
 	evictorTicker *time.Ticker
 	closed        bool
@@ -33,9 +33,9 @@ func New(config Config) (*Pool, error) {
 		return nil, ErrObjectCreateFactoryNotFound
 	}
 	p := &Pool{
-		manager:    newPoolManager(),
-		config:     config,
-		returnedCh: make(chan struct{}, 1),
+		manager:  newPoolManager(),
+		config:   config,
+		wakeupCh: make(chan struct{}, 1),
 	}
 	if config.AutoEvict {
 		p.evictorTicker = time.NewTicker(p.config.EvictInterval)
@@ -92,6 +92,11 @@ func (p *Pool) BorrowObject(ctx context.Context) (interface{}, error) {
 	validateCount := 0
 	for object == nil {
 		p.actionLock.Lock()
+		if p.isClosed() {
+			p.actionLock.Unlock()
+			return nil, ErrPoolClosed
+		}
+
 		var err error
 		object, err = p.borrowObject(ctx)
 		p.actionLock.Unlock()
@@ -102,7 +107,8 @@ func (p *Pool) BorrowObject(ctx context.Context) (interface{}, error) {
 		switch err {
 		case ErrObjectNotFound:
 			select {
-			case <-p.returnedCh:
+			//wakened or closed
+			case <-p.wakeupCh:
 			//wait for context canceled
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -121,9 +127,6 @@ func (p *Pool) BorrowObject(ctx context.Context) (interface{}, error) {
 }
 
 func (p *Pool) borrowObject(ctx context.Context) (interface{}, error) {
-	if p.isClosed() {
-		return nil, ErrPoolClosed
-	}
 	//if there is no idle objects
 	if p.manager.IdleSize() <= 0 {
 		if p.isFull() {
@@ -162,7 +165,12 @@ func (p *Pool) borrowObject(ctx context.Context) (interface{}, error) {
 func (p *Pool) InvalidateObject(ctx context.Context, object interface{}) error {
 	p.actionLock.Lock()
 	defer p.actionLock.Unlock()
-	return p.invalidateObject(ctx, object)
+	err := p.invalidateObject(ctx, object)
+	if !p.isClosed() {
+		//shouldn't wakeup when pool closed
+		p.wakeup()
+	}
+	return err
 }
 
 func (p *Pool) invalidateObject(ctx context.Context, object interface{}) error {
@@ -181,15 +189,15 @@ func (p *Pool) ReturnObject(ctx context.Context, object interface{}) error {
 
 	p.manager.Return(object)
 
-	p.returned()
+	p.wakeup()
 	return nil
 }
 
-func (p *Pool) returned() {
-	//returnedCh waiting borrower
+func (p *Pool) wakeup() {
+	//wakeupCh waiting for borrower return/invalidate object
 	//make sure never blocked
 	select {
-	case p.returnedCh <- struct{}{}:
+	case p.wakeupCh <- struct{}{}:
 	default:
 	}
 }
@@ -274,13 +282,15 @@ func (p *Pool) Close(ctx context.Context) error {
 		return ErrPoolClosed
 	}
 	p.closed = true
+	close(p.wakeupCh)
 
 	if p.evictorTicker != nil {
 		p.evictorTicker.Stop()
 	}
 
 	//destroy all idle objects
-	//active object should be destroyed after client returned to make sure pool will not close a active object
+	//Close function will not close any active object
+	//But active object should be destroyed after borrow function waken
 	p.manager.RangeIdle(func(object interface{}) {
 		_ = p.destroyObject(ctx, object)
 	})
