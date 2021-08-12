@@ -7,6 +7,8 @@
 
 Generic Object Pool for Golang.
 
+It has been used in production and serve millions of QPS.
+
 ## Adopters
 
 - [Hive](https://github.com/joway/hive): A high-efficiency Goroutine Pool.
